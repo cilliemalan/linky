@@ -12,7 +12,16 @@
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                { "name": "LINKY_LOGGING", "value": "true" },
+                { "name": "LINKY_PORT", "value": "8880" },
+                { "name": "LINKY_SECURE_PORT", "value": "4443" },
+                { "name": "LINKY_DATABASE", "value": "linky.db" },
+                { "name": "LINKY_CERT_CHAIN", "value": "certs/chain.pem" },
+                { "name": "LINKY_CERT_KEY", "value": "certs/privkey.pem" },
+                { "name": "LINKY_JWT_ISSUER", "value": "myself" },
+                { "name": "LINKY_JWT_ISSUER_KEY", "value": "certs/jwtissuer_pubkey.pem" }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
@@ -23,5 +32,14 @@
                 }
             ]
         }
+        // {
+        //     "type": "gdb",
+        //     "request": "launch",
+        //     "name": "Launch Program",
+        //     "target": "build/linky",
+        //     "cwd": "${workspaceRoot}",
+        //     "valuesFormatting": "parseText",
+        //     "terminal": ""
+        // }
     ]
 }
