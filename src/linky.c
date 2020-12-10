@@ -1,7 +1,5 @@
-#include <stdlib.h>
-#include <stdio.h>
-
 #include "config.h"
+#include "listener.h"
 #include "logging.h"
 
 int main()
@@ -12,6 +10,11 @@ int main()
         return -1;
     }
 
+    if (!linky_listen())
+    {
+        critical_error("Could not listen");
+        return -1;
+    }
 
     return 0;
 }

@@ -8,7 +8,8 @@ project(linky)
 set(SOURCES
     src/config.c
     src/linky.c
-    src/logging.c)
+    src/logging.c
+    src/listener.c)
 
 add_executable(linky ${SOURCES})
 target_include_directories(linky PUBLIC src)
@@ -18,7 +19,7 @@ target_compile_options(linky PUBLIC )
 if(MSVC)
   target_compile_options(linky PRIVATE /W4 /WX)
 else()
-  target_compile_options(linky PRIVATE -Wall -Wextra -pedantic -Werror)
+  target_compile_options(linky PRIVATE -Wall -Wextra -Wno-unused-parameter -pedantic -Werror)
 endif()
 
 
