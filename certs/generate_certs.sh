@@ -94,3 +94,9 @@ openssl req -config intermediate.cnf \
 
 # create the certificate chain
 cat cert.pem intermediate_cert.pem ca_cert.pem > chain.pem
+
+
+# generate private key for JWT issuer
+checkoverwrite jwtissuer_privkey.pem && openssl ecparam -name prime256v1 -genkey -noout -out jwtissuer_privkey.pem
+# generate public key for JWT issuer
+checkoverwrite jwtissuer_pubkey.pem && openssl ec -in jwtissuer_privkey.pem -pubout -out jwtissuer_pubkey.pem
