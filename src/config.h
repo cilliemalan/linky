@@ -30,9 +30,17 @@ typedef struct config_s {
     // if not specified no token will be accepted.
     const char* jwt_issuer;
 
-    // PEM encoded issuer public key. From env LINKY_JWT_ISSUER_KEY. No default.
+    // PEM encoded issuer public key or file. From env LINKY_JWT_ISSUER_KEY. No default.
     // if not specified no token will be accepted.
     const char* jwt_issuer_key;
+    
+    // The uid to change to once everything has been loaded. From env LINKY_UID.
+    // If not specified the uid will not be changed. 0 is not a valid value.
+    unsigned int setuid;
+
+    // The gid to change to once everything has been loaded. From env LINKY_GID.
+    // If not specified the gid will not be changed. 0 is not a valid value.
+    unsigned int setgid;
 
 } config_t;
 

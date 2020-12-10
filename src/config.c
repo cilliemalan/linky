@@ -84,6 +84,13 @@ static bool validate_config(const config_t *config)
             {
                 warn("JWT issuer key not specified");
             }
+            else
+            {
+                if (!strstr(config->jwt_issuer_key, "-----BEGIN PUBLIC KEY-----") && !file_exists(config->jwt_issuer_key))
+                {
+                    warn("JWT issuer key invalid or does not exist");
+                }
+            }
         }
     }
 
@@ -103,7 +110,17 @@ static void print_config(const config_t *config)
         debugf("JWT audience: %s", coalesce(config->jwt_audience, "<N/A>"));
         debugf("JWT issuer: %s", coalesce(config->jwt_issuer, "<N/A>"));
         debugf("JWT issuer key: %s", coalesce(config->jwt_issuer_key, "<N/A>"));
+        debugf("setgid: %d", config->setgid);
+        debugf("setuid: %d", config->setuid);
     }
+}
+
+static bool is_true(const char *msg)
+{
+    return msg && msg[0] &&
+           (strcmp(msg, "1") == 0 ||
+            strcasecmp(msg, "true") ||
+            strcasecmp(msg, "yes"));
 }
 
 bool config_load()
@@ -112,8 +129,7 @@ bool config_load()
     {
         config_t *newconfig = (config_t *)malloc(sizeof(config_t));
 
-        const char *sLogging = getenv("LINKY_LOGGING");
-        newconfig->logging = sLogging ? strstr(sLogging, "1") || strcasecmp(sLogging, "true") : false;
+        newconfig->logging = is_true(getenv("LINKY_LOGGING"));
 
         newconfig->port = coalesce(getenv("LINKY_PORT"), DEFAULT_PORT);
         newconfig->secure_port = coalesce(getenv("LINKY_SECURE_PORT"), DEFAULT_SECURE_PORT);
@@ -123,6 +139,33 @@ bool config_load()
         newconfig->jwt_audience = coalesce(getenv("LINKY_JWT_AUDIENCE"), DEFAULT_JWT_AUDIENCE);
         newconfig->jwt_issuer = getenv("LINKY_JWT_ISSUER");
         newconfig->jwt_issuer_key = getenv("LINKY_JWT_ISSUER_KEY");
+
+        const char *setuidval = getenv("LINKY_UID");
+        const char *setgidval = getenv("LINKY_UID");
+
+        // parse setuid and setgid
+        if (setuidval && setuidval[0])
+        {
+            newconfig->setuid = strtoul(setuidval, NULL, 10);
+            if (newconfig->setuid == 0)
+            {
+                warnf("Cannot setuid to %s", setuidval);
+            }
+        }
+        if (setgidval && setgidval[0])
+        {
+            newconfig->setgid = strtoul(setgidval, NULL, 10);
+            if (newconfig->setgid == 0)
+            {
+                warnf("Cannot setgid to %s", setgidval);
+            }
+        }
+
+        // warn if only one of setgid or setuid is set
+        if (newconfig->setgid ^ newconfig->setuid)
+        {
+            warn("only one of setuid and setgid is valid");
+        }
 
         if (validate_config(newconfig))
         {
