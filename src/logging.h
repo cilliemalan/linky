@@ -31,3 +31,11 @@ static inline bool logging_debug_enabled()
 #define debugf(...)              \
     if (logging_debug_enabled()) \
     log_printf(cDebug, __VA_ARGS__)
+
+
+
+#define critical_errorp() perror(cCriticalError)
+#define errorp() perror(cError)
+#define warnp() perror(cWarning)
+#define infop() perror(cInfo)
+#define debugp() perror(cDebug)
