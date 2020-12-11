@@ -7,6 +7,7 @@ project(linky)
 
 set(SOURCES
     src/config.c
+    src/hashtable.c
     src/linky.c
     src/logging.c
     src/listener.c)
