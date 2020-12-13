@@ -45,16 +45,11 @@ typedef struct hashtable_options_s hashtable_options_t;
 // create a new hashtable
 hashtable hashtable_create(hashtable_options_t* options, void* bucket_memory, uint32_t bucket_memory_size);
 
-// adds an item to the hashtable and allocates space for the
-// value. The pointer to the memory for the value is put in value. The size
-// of the space allocated for the value is specified in options
-// when creating the hashtable.
-bool hashtable_set(hashtable table, uint32_t key, void** value);
-
 // gets a value from the hashtable for the specified the key.
-// a pointer to the value is put in value. It will be set
-// to NULL if the key is not found.
-bool hashtable_get(hashtable table, uint32_t key, void** value);
+// a pointer to the value is put in value. If create is specified
+// the item will be created if it does not exist, otherwise the
+// value remains NULL.
+bool hashtable_get(hashtable table, uint32_t key, void** value, bool create);
 
 // removes a key and value from the hashtable for the specified the key.
 bool hashtable_delete(hashtable table, uint32_t key);

@@ -6,39 +6,98 @@
 #include <assert.h>
 #include <stddef.h>
 
-// buckets are allocated in sizes that are multiples of 64
-#define BUCKET_SIZE_INC 64
-#define MAXINT 2147483647
-#define MININT (-2147483647)
-// the offset value for each bucket is divided by the
-// platform maximum alignment which is typically 16 bytes
-#define OFFSET_INCREMENT sizeof(max_align_t)
-#define CALC_OFFSET(root, ptr) ((ptrdiff_t)(((uint8_t *)(ptr)) - ((uint8_t *)(root))) / OFFSET_INCREMENT)
-#define OFFSET_PTR(root, offset) (uint32_t *)((uint8_t *)(root) + ((ptrdiff_t)(offset)*OFFSET_INCREMENT))
-#define OFFSET_PTR_SAFE(root, offset) ((root) && (offset) ? OFFSET_PTR(root, offset) : NULL)
-#define INDEX_OF_FIRST_FREE_BIT(bitmap) (int32_t)(__builtin_ffs(~(int32_t)(bitmap)) - 1)
-
-#define TABLE_INDEX(table, key) ((key) % (table)->options.num_buckets)
-#define TABLE_OFFSET(table, key) (table)->root[TABLE_INDEX(table, key)]
-#define TABLE_BUCKET(table, key) OFFSET_PTR_SAFE((table)->root, TABLE_OFFSET(table, key))
-
-#define TABLE_VALUE_SIZE(table) round_up_value_size((table)->options.value_size + sizeof(uint32_t), sizeof(uint32_t))
-
 struct hastable_s
 {
+    // the main hashtable structure. Each entry in the
+    // array is indexed by the key. The value of each
+    // entry is an offset from root to the bucket object.
     int32_t *root;
     hashtable_options_t options;
     bool must_free;
 };
 
-static size_t round_up_value_size(size_t x, size_t multiple)
+// buckets are allocated in sizes that are multiples of 64
+#define BUCKET_SIZE_INC 64
+#define MAXINT 2147483647
+#define MININT (-2147483647)
+
+// the offset value for each bucket is divided by the
+#define OFFSET_INCREMENT 16
+
+static int32_t calc_offset(int32_t *root, uint32_t *bucket)
 {
+    ptrdiff_t byte_offset = (uint8_t *)(bucket) - (uint8_t *)(root);
+    assert((byte_offset % OFFSET_INCREMENT) == 0);
+    return byte_offset / OFFSET_INCREMENT;
+}
+
+static uint32_t *offset_ptr(int32_t *root, int32_t offset)
+{
+    assert(root && offset);
+    return (uint32_t *)((uint8_t *)(root) + ((ptrdiff_t)(offset)*OFFSET_INCREMENT));
+}
+
+static uint32_t *offset_ptr_safe(int32_t *root, int32_t offset)
+{
+    if (root && offset)
+    {
+        return offset_ptr(root, offset);
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+static int32_t index_of_first_free_bit(uint32_t bitmap)
+{
+    return (int32_t)(__builtin_ffs(~(int32_t)(bitmap)) - 1);
+}
+
+static int32_t table_index(hashtable table, int32_t key)
+{
+    assert(table);
+    return key % table->options.num_buckets;
+}
+
+static uint32_t table_offset(hashtable table, int32_t key)
+{
+    assert(table);
+    uint32_t index = table_index(table, key);
+    return table->root[index];
+}
+
+static void set_table_offset(hashtable table, int32_t key, int32_t offset)
+{
+    assert(table && offset);
+    uint32_t index = table_index(table, key);
+    table->root[index] = offset;
+}
+
+static uint32_t *table_bucket(hashtable table, int32_t key)
+{
+    assert(table);
+    int32_t offset = table_offset(table, key);
+    return offset_ptr_safe((table)->root, offset);
+}
+
+static size_t round_up_to(size_t x, size_t multiple)
+{
+    // assert(number of bits in multiple == 1);
+    assert(__builtin_popcount(multiple) == 1);
     return (x + multiple - 1) & -multiple;
+}
+
+static size_t table_item_size(hashtable table)
+{
+    size_t item_size = sizeof(uint32_t) + (table)->options.value_size;
+    return round_up_to(item_size, sizeof(uint32_t));
 }
 
 static void *default_hasthable_allocate_fn(size_t size)
 {
-    return calloc(size, 1);
+    void *ptr = calloc(size, 1);
+    return ptr;
 }
 
 static void *default_hasthable_reallocate_fn(void *ptr, size_t orig_size, size_t new_size)
@@ -64,30 +123,31 @@ static uint32_t *increase_bucket_size(hashtable table, uint32_t key)
     uint32_t *result = NULL;
     if (table)
     {
-        uint32_t *bucket = TABLE_BUCKET(table, key);
+        uint32_t *bucket = table_bucket(table, key);
         if (bucket)
         {
-            uint32_t bucketsize = bucket[0];
+            uint32_t bucketsize_words = bucket[0];
+            uint32_t bucketsize_bytes = bucketsize_words * sizeof(uint32_t);
 
-            // increase bucket size at least enough for one value and
+            // increase bucket size at least enough for one item and
             // a bitmap just in case a bitmap is needed
-            uint32_t newsize = bucketsize + round_up_value_size(TABLE_VALUE_SIZE(table) + sizeof(uint32_t), BUCKET_SIZE_INC);
-            assert(newsize < MAXINT);
+            uint32_t newsize_bytes = round_up_to(bucketsize_bytes + table_item_size(table) + sizeof(uint32_t), BUCKET_SIZE_INC);
+            uint32_t newsize_words = newsize_bytes / sizeof(uint32_t);
 
-            uint32_t *newbucket = table->options.reallocate(bucket, bucketsize, newsize);
+            uint32_t *newbucket = (uint32_t *)table->options.reallocate(bucket, bucketsize_bytes, newsize_bytes);
             if (newbucket)
             {
                 // update bucket size.
                 // Size is tracked in uint32_t increments.
-                newbucket[0] = newsize / sizeof(uint32_t);
+                newbucket[0] = newsize_words;
 
                 // update the offset
                 if (newbucket != bucket)
                 {
-                    int32_t offset = CALC_OFFSET(table->root, newbucket);
+                    int32_t offset = calc_offset(table->root, newbucket);
                     assert(offset > MININT && offset < MAXINT);
                     // store the offset
-                    TABLE_OFFSET(table, key) = (int32_t)offset;
+                    set_table_offset(table, key, offset);
                 }
 
                 // return the new bucket
@@ -100,27 +160,27 @@ static uint32_t *increase_bucket_size(hashtable table, uint32_t key)
         }
         else
         {
-            // the first 8 bytes of the value contains some bookkeeping
-            size_t bucketsize = round_up_value_size(TABLE_VALUE_SIZE(table) + sizeof(uint32_t), BUCKET_SIZE_INC);
-            assert(bucketsize < MAXINT);
+            // the first 8 bytes of the bucket contains some bookkeeping
+            uint32_t bucketsize_bytes = round_up_to(table_item_size(table) + sizeof(uint32_t), BUCKET_SIZE_INC);
+            uint32_t bucketsize_words = bucketsize_bytes / sizeof(uint32_t);
 
-            // allocate the initial value memory
-            uint32_t *newbucket = (uint32_t *)table->options.allocate(bucketsize);
+            // allocate the initial bucket memory
+            uint32_t *newbucket = (uint32_t *)table->options.allocate(bucketsize_bytes);
 
             if (newbucket)
             {
                 // size of the bucket in bucket size increments
                 // Size is tracked in uint32_t increments.
-                newbucket[0] = (uint32_t)bucketsize / sizeof(uint32_t);
+                newbucket[0] = bucketsize_words;
 
                 // calculate and check the offset
-                ptrdiff_t offset = CALC_OFFSET(table->root, bucket);
+                ptrdiff_t offset = calc_offset(table->root, newbucket);
                 assert(offset > MININT && offset < MAXINT);
                 // store the offset
-                TABLE_OFFSET(table, key) = (int32_t)offset;
+                set_table_offset(table, key, offset);
 
                 // return the new bucket
-                result = bucket;
+                result = newbucket;
             }
             else
             {
@@ -210,29 +270,29 @@ hashtable hashtable_create(hashtable_options_t *options, void *bucket_memory, ui
                 options->num_buckets = bucket_memory_size / sizeof(int32_t);
             }
             // minimum number of buckets is 64
-            else if (options->num_buckets < 64)
+            else if (table->options.num_buckets < 64)
             {
-                if (options->num_buckets)
+                if (table->options.num_buckets)
                 {
                     warn("The minimum number of buckets is 64. options->num_buckets will be set to 64");
                 }
-                options->num_buckets = 64;
+                table->options.num_buckets = 64;
             }
 
             // minimum value size
-            if (options->value_size < 1)
+            if (table->options.value_size < sizeof(int32_t))
             {
-                options->value_size = 1;
+                table->options.value_size = sizeof(int32_t);
             }
 
             if (bucket_memory)
             {
-                table->root = bucket_memory;
+                table->root = (int32_t *)bucket_memory;
                 table->must_free = false;
             }
             else
             {
-                table->root = (int32_t *)table->options.allocate(sizeof(int32_t) * options->num_buckets);
+                table->root = (int32_t *)table->options.allocate(sizeof(int32_t) * table->options.num_buckets);
                 table->must_free = true;
             }
 
@@ -255,101 +315,25 @@ hashtable hashtable_create(hashtable_options_t *options, void *bucket_memory, ui
     return result;
 }
 
-bool hashtable_set(hashtable table, uint32_t key, void **value)
-{
-    bool result = false;
-    if (table && value)
-    {
-        uint32_t *bucket = TABLE_BUCKET(table, key);
-        if (!bucket)
-        {
-            // allocate the bucket
-            bucket = increase_bucket_size(table, key);
-        }
-
-        // we need to set the value in the first free spot we can find
-
-        // track our offset into the bucket structure
-        size_t bitmap_offset = 1;
-        uint32_t *newvalue = NULL;
-        while (bucket && !newvalue)
-        {
-            // the bucket allocation bitmap. Each bit means a span of value_size bytes.
-            // 1 means the span is allocated. 0 means it's free.
-            uint32_t bucketsize = bucket[0];
-            uint32_t bitmap = bucket[bitmap_offset];
-
-            int32_t freebit = INDEX_OF_FIRST_FREE_BIT(bitmap);
-            if (freebit >= 0)
-            {
-                // there is a free value spot in index freebit
-                uint32_t value_offset = bitmap_offset + 1 + ((TABLE_VALUE_SIZE(table) * freebit) / sizeof(uint32_t));
-
-                // make sure the value does not extend past the end of the bucket
-                uint32_t value_end_offset = value_offset + (TABLE_VALUE_SIZE(table) / sizeof(uint32_t));
-
-                // increase bucket size if needed
-                while (bucket && value_end_offset < bucketsize)
-                {
-                    bucket = increase_bucket_size(table, key);
-                    if (bucket)
-                    {
-                        bucketsize = bucket[0];
-                    }
-                }
-
-                if (bucket)
-                {
-                    // "allocate" the value
-                    bucket[bitmap_offset] |= 1 << freebit;
-
-                    // assign the value
-                    newvalue = bucket + value_offset;
-                    newvalue[0] = key;
-                }
-            }
-            else
-            {
-                // the next 32 values are full
-                assert(bitmap == 0xffffffff);
-                // move to the next bitmap
-                bitmap_offset += 1 + ((TABLE_VALUE_SIZE(table) * 32) / sizeof(uint32_t));
-
-                // increase the bucket size if needed
-                while (bucket && bitmap_offset < bucketsize)
-                {
-                    bucket = increase_bucket_size(table, key);
-                    if (bucket)
-                    {
-                        bucketsize = bucket[0];
-                    }
-                }
-            }
-        }
-
-        *value = newvalue ? newvalue + 1 : NULL;
-        result = newvalue != NULL;
-    }
-    else
-    {
-        error("table or value was NULL");
-    }
-
-    return result;
-}
-
-static uint32_t *hashtable_find_value_container(hashtable table, uint32_t key, uint32_t **pbitmap, uint32_t *pindex)
+static uint32_t *hashtable_find_item_container(hashtable table, uint32_t key, uint32_t **pbitmap, uint32_t *pindex, bool create)
 {
     uint32_t *result = NULL;
     if (table)
     {
-        uint32_t *bucket = TABLE_BUCKET(table, key);
+        uint32_t *bucket = table_bucket(table, key);
+
+        // create the bucket if we need to
+        if (!bucket && create)
+        {
+            bucket = increase_bucket_size(table, key);
+        }
+
         if (bucket)
         {
-            // search for the value
-            uint32_t bucketsize = bucket[0];
+            // search for the right item
+            uint32_t bucketsize_words = bucket[0];
             uint32_t index = 1;
-            while (!result && index < bucketsize)
+            while (!result && index < bucketsize_words)
             {
                 uint32_t bitmap = bucket[index];
                 for (uint32_t i = 0; i < 32 && !result; i++)
@@ -357,14 +341,14 @@ static uint32_t *hashtable_find_value_container(hashtable table, uint32_t key, u
                     if ((1 << i) & bitmap)
                     {
                         // there is something allocated in this slot
-                        uint32_t valoffset = index + 1 + ((TABLE_VALUE_SIZE(table) * i) / sizeof(uint32_t));
-                        if (valoffset < bucketsize)
+                        uint32_t item_offset = index + 1 + ((table_item_size(table) * i) / sizeof(uint32_t));
+                        if (item_offset < bucketsize_words)
                         {
-                            uint32_t valkey = bucket[valoffset];
-                            if (valkey == key)
+                            uint32_t item_key = bucket[item_offset];
+                            if (item_key == key)
                             {
                                 // found!
-                                result = bucket + valoffset;
+                                result = bucket + item_offset;
                                 if (pbitmap)
                                 {
                                     *pbitmap = bucket + index;
@@ -377,16 +361,76 @@ static uint32_t *hashtable_find_value_container(hashtable table, uint32_t key, u
                         }
                     }
                 }
-                index += 1 + ((TABLE_VALUE_SIZE(table) * 32) / sizeof(uint32_t));
+                index += 1 + ((table_item_size(table) * 32) / sizeof(uint32_t));
+            }
+
+            // if it wasn't found, create it if needed
+            if (!result && create)
+            {
+                uint32_t index = 1;
+                while (bucket && !result)
+                {
+                    // the bucket allocation bitmap. Each bit means a span of item_size bytes.
+                    // 1 means the span is allocated. 0 means it's free.
+                    uint32_t bucketsize_words = bucket[0];
+                    uint32_t bitmap = bucket[index];
+
+                    int32_t freebit = index_of_first_free_bit(bitmap);
+                    if (freebit >= 0)
+                    {
+                        // there is a free item spot in index freebit
+                        uint32_t item_offset = index + 1 + ((table_item_size(table) * freebit) / sizeof(uint32_t));
+
+                        // make sure the item does not extend past the end of the bucket
+                        uint32_t item_end_offset = item_offset + (table_item_size(table) / sizeof(uint32_t));
+
+                        // increase bucket size if needed
+                        while (bucket && item_end_offset > bucketsize_words)
+                        {
+                            bucket = increase_bucket_size(table, key);
+                            if (bucket)
+                            {
+                                bucketsize_words = bucket[0];
+                            }
+                        }
+
+                        if (bucket)
+                        {
+                            // "allocate" the item
+                            bucket[index] |= 1 << freebit;
+
+                            // assign the item
+                            result = bucket + item_offset;
+                            result[0] = key;
+                        }
+                    }
+                    else
+                    {
+                        // the next 32 items are full
+                        assert(bitmap == 0xffffffff);
+                        // move to the next bitmap
+                        index += 1 + ((table_item_size(table) * 32) / sizeof(uint32_t));
+
+                        // increase the bucket size if needed
+                        while (bucket && index > bucketsize_words)
+                        {
+                            bucket = increase_bucket_size(table, key);
+                            if (bucket)
+                            {
+                                bucketsize_words = bucket[0];
+                            }
+                        }
+                    }
+                }
             }
         }
     }
     return result;
 }
 
-bool hashtable_get(hashtable table, uint32_t key, void **value)
+bool hashtable_get(hashtable table, uint32_t key, void **value, bool create)
 {
-    uint32_t *val = hashtable_find_value_container(table, key, NULL, NULL);
+    uint32_t *val = hashtable_find_item_container(table, key, NULL, NULL, create);
     if (val && value)
     {
         *value = val + 1;
@@ -399,11 +443,11 @@ bool hashtable_delete(hashtable table, uint32_t key)
 {
     uint32_t *pbitmap;
     uint32_t index;
-    uint32_t *val = hashtable_find_value_container(table, key, &pbitmap, &index);
+    uint32_t *val = hashtable_find_item_container(table, key, &pbitmap, &index, false);
     if (val)
     {
         // clear out the value container
-        memset(val, 0, TABLE_VALUE_SIZE(table));
+        memset(val, 0, table_item_size(table));
         // clear the bit
         *pbitmap &= ~(1 << index);
         // TODO: shrink the bucket if needed
@@ -418,24 +462,24 @@ void hashtable_iterate(hashtable table, hashtable_iterate_fn iterator, void *sta
         for (uint32_t i = 0; i < table->options.num_buckets; i++)
         {
             // iterate through all the buckets
-            uint32_t *bucket = TABLE_BUCKET(table, i);
+            uint32_t *bucket = table_bucket(table, i);
             if (bucket)
             {
                 // iterate through all the values in the bucket
-                uint32_t bucketsize = bucket[0];
+                uint32_t bucketsize_words = bucket[0];
                 uint32_t index = 1;
-                while (index < bucketsize)
+                while (index < bucketsize_words)
                 {
                     uint32_t bitmap = bucket[index];
                     for (uint32_t i = 0; i < 32; i++)
                     {
                         if ((1 << i) & bitmap)
                         {
-                            uint32_t valoffset = index + 1 + ((TABLE_VALUE_SIZE(table) * i) / sizeof(uint32_t));
-                            uint32_t valend = valoffset + (TABLE_VALUE_SIZE(table) / sizeof(uint32_t));
-                            if (valend <= bucketsize)
+                            uint32_t item_offset = index + 1 + ((table_item_size(table) * i) / sizeof(uint32_t));
+                            uint32_t item_end = item_offset + (table_item_size(table) / sizeof(uint32_t));
+                            if (item_end <= bucketsize_words)
                             {
-                                iterator(table, state, bucket[valoffset], &bucket[valoffset + 1]);
+                                iterator(table, state, bucket[item_offset], &bucket[item_offset + 1]);
                             }
                         }
                     }
@@ -454,10 +498,12 @@ void hashtable_free(hashtable table)
             // free all allocated buckets
             for (uint32_t i = 0; i < table->options.num_buckets; i++)
             {
-                uint32_t *bucket = TABLE_BUCKET(table, i);
+                uint32_t *bucket = table_bucket(table, i);
                 if (bucket)
                 {
-                    table->options.free(bucket, bucket[0]);
+                    uint32_t bucketsize_words = bucket[0];
+                    uint32_t bucketsize_bytes = bucketsize_words * sizeof(uint32_t);
+                    table->options.free(bucket, bucketsize_bytes);
                 }
             }
 
