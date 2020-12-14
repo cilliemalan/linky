@@ -3,6 +3,7 @@
 if [[ "$(id)" =~ 'uid=0(root) gid=0(root)' ]]
 then
 
+    echo "trusting ca_cert.pem"
     cp ./ca_cert.pem /usr/local/share/ca-certificates/linky_ca.crt
 
     dpkg-reconfigure -fnoninteractive ca-certificates
