@@ -16,7 +16,7 @@ set(SOURCES
 add_executable(linky ${SOURCES})
 target_include_directories(linky PUBLIC src)
 target_link_options(linky PUBLIC -static)
-target_compile_options(linky PUBLIC )
+set_property(TARGET linky PROPERTY C_STANDARD 11)
 
 if(MSVC)
   target_compile_options(linky PRIVATE /W4 /WX)
