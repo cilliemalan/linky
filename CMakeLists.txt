@@ -6,6 +6,7 @@ project(linky)
 
 
 set(SOURCES
+    src/allocator.c
     src/config.c
     src/hashtable.c
     src/linky.c
