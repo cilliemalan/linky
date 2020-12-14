@@ -8,6 +8,7 @@ project(linky)
 set(SOURCES
     src/allocator.c
     src/config.c
+    src/database.c
     src/hashtable.c
     src/linky.c
     src/logging.c
