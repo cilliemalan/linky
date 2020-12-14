@@ -33,7 +33,7 @@ static inline bool logging_debug_enabled()
     log_printf(cDebug, __VA_ARGS__)
 
 
-
+extern void perror (const char *__s);
 #define critical_errorp() perror(cCriticalError)
 #define errorp() perror(cError)
 #define warnp() perror(cWarning)
