@@ -94,13 +94,13 @@ static size_t table_item_size(hashtable table)
     return round_up_to(item_size, sizeof(uint32_t));
 }
 
-static void *default_hasthable_allocate_fn(size_t size)
+static void *default_hasthable_allocate_fn(void *state, size_t size)
 {
     void *ptr = calloc(size, 1);
     return ptr;
 }
 
-static void *default_hasthable_reallocate_fn(void *ptr, size_t orig_size, size_t new_size)
+static void *default_hasthable_reallocate_fn(void *state, void *ptr, size_t orig_size, size_t new_size)
 {
     void *newmem = realloc(ptr, new_size);
 
@@ -113,7 +113,7 @@ static void *default_hasthable_reallocate_fn(void *ptr, size_t orig_size, size_t
     return newmem;
 }
 
-static void default_hasthable_free_fn(void *ptr, size_t orig_size)
+static void default_hasthable_free_fn(void *state, void *ptr, size_t orig_size)
 {
     free(ptr);
 }
@@ -134,7 +134,7 @@ static uint32_t *increase_bucket_size(hashtable table, uint32_t key)
             uint32_t newsize_bytes = round_up_to(bucketsize_bytes + table_item_size(table) + sizeof(uint32_t), BUCKET_SIZE_INC);
             uint32_t newsize_words = newsize_bytes / sizeof(uint32_t);
 
-            uint32_t *newbucket = (uint32_t *)table->options.reallocate(bucket, bucketsize_bytes, newsize_bytes);
+            uint32_t *newbucket = (uint32_t *)table->options.reallocate(table->options.state, bucket, bucketsize_bytes, newsize_bytes);
             if (newbucket)
             {
                 // update bucket size.
@@ -165,7 +165,7 @@ static uint32_t *increase_bucket_size(hashtable table, uint32_t key)
             uint32_t bucketsize_words = bucketsize_bytes / sizeof(uint32_t);
 
             // allocate the initial bucket memory
-            uint32_t *newbucket = (uint32_t *)table->options.allocate(bucketsize_bytes);
+            uint32_t *newbucket = (uint32_t *)table->options.allocate(table->options.state, bucketsize_bytes);
 
             if (newbucket)
             {
@@ -292,7 +292,7 @@ hashtable hashtable_create(hashtable_options_t *options, void *bucket_memory, ui
             }
             else
             {
-                table->root = (int32_t *)table->options.allocate(sizeof(int32_t) * table->options.num_buckets);
+                table->root = (int32_t *)table->options.allocate(table->options.state, sizeof(int32_t) * table->options.num_buckets);
                 table->must_free = true;
             }
 
@@ -503,13 +503,13 @@ void hashtable_free(hashtable table)
                 {
                     uint32_t bucketsize_words = bucket[0];
                     uint32_t bucketsize_bytes = bucketsize_words * sizeof(uint32_t);
-                    table->options.free(bucket, bucketsize_bytes);
+                    table->options.free(table->options.state, bucket, bucketsize_bytes);
                 }
             }
 
             if (table->must_free)
             {
-                table->options.free(table->root, table->options.num_buckets * sizeof(int32_t));
+                table->options.free(table->options.state, table->root, table->options.num_buckets * sizeof(int32_t));
             }
         }
 

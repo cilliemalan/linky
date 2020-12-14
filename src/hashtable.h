@@ -18,9 +18,9 @@
 
 typedef struct hastable_s* hashtable;
 
-typedef void* (*hasthable_allocate_fn)(size_t size);
-typedef void* (*hasthable_reallocate_fn)(void* ptr, size_t orig_size, size_t new_size);
-typedef void (*hasthable_free_fn)(void* ptr, size_t orig_size);
+typedef void* (*hasthable_allocate_fn)(void* state, size_t size);
+typedef void* (*hasthable_reallocate_fn)(void* state, void* ptr, size_t orig_size, size_t new_size);
+typedef void (*hasthable_free_fn)(void* state, void* ptr, size_t orig_size);
 typedef bool (*hashtable_iterate_fn)(hashtable table, void* state, uint32_t key, void* value);
 
 struct hashtable_options_s {
@@ -39,6 +39,9 @@ struct hashtable_options_s {
 
     // the amount of space to allocate for each value
     size_t value_size;
+
+    // piece of state passed to allocation functions
+    void* state;
 };
 typedef struct hashtable_options_s hashtable_options_t;
 
