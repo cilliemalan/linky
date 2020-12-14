@@ -15,7 +15,7 @@ cmake --build .
 All configuration is via environment variables. See [config.h](src/config.h) for info.
 
 ## Certificates
-There are some scripts to generate SSL certificates and JWT keys in (certs)[certs].
+There are some scripts to generate SSL certificates and JWT keys in [certs](certs).
 
 ## License
 See [LICENSE](LICENSE).
