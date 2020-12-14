@@ -1,20 +1,47 @@
+#include <stdlib.h>
+
 #include "config.h"
 #include "listener.h"
+#include "database.h"
 #include "logging.h"
 
 int main()
 {
+    config cfg = NULL;
+    database db = NULL;
+    bool result = true;
+
     if (!config_load())
     {
         critical_error("Could not load configuration");
-        return -1;
+        result = false;
     }
 
-    if (!linky_listen())
+    if (result)
     {
-        critical_error("Could not listen");
-        return -1;
+        cfg = config_get();
+        result = !!cfg;
     }
 
-    return 0;
+    if (result)
+    {
+        db = database_open(cfg->database, true, cfg->setgid, cfg->setuid);
+        result = !!db;
+    }
+
+    if (result)
+    {
+        if (!linky_listen())
+        {
+            critical_error("Could not listen");
+            result = false;
+        }
+    }
+
+    if (db)
+    {
+        database_close(db);
+    }
+    
+    return result;
 }
