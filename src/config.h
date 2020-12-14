@@ -3,7 +3,7 @@
 
 
 // application configuration. Loaded from environment
-typedef struct config_s {
+struct config_s {
 
     // whether or not logging is enable. from env LINKY_LOGGING.
     bool logging;
@@ -42,7 +42,10 @@ typedef struct config_s {
     // If not specified the gid will not be changed. 0 is not a valid value.
     unsigned int setgid;
 
-} config_t;
+};
+
+typedef struct config_s config_t;
+typedef const struct config_s* config;
 
 bool config_load();
-const config_t* config_get();
+config config_get();

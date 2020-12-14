@@ -20,7 +20,7 @@
 #define DEFAULT_CERT_KEY "/etc/linky/privkey.pem"
 #define DEFAULT_JWT_AUDIENCE "linky"
 
-static config_t *config = NULL;
+static config_t *_config = NULL;
 
 static bool file_exists(const char *file)
 {
@@ -125,7 +125,7 @@ static bool is_true(const char *msg)
 
 bool config_load()
 {
-    if (!config)
+    if (!_config)
     {
         config_t *newconfig = (config_t *)malloc(sizeof(config_t));
 
@@ -169,16 +169,16 @@ bool config_load()
 
         if (validate_config(newconfig))
         {
-            config = newconfig;
-            print_config(config);
+            _config = newconfig;
+            print_config(_config);
         }
     }
 
-    return !!config;
+    return !!_config;
 }
 
-const config_t *config_get()
+config config_get()
 {
     config_load();
-    return config;
+    return _config;
 }
